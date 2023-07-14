@@ -1,87 +1,78 @@
 #!/usr/bin/python3
-
-"""
-Markdown script using python.
-"""
 import sys
-import os.path
-import re
+import os
 import hashlib
 
-if __name__ == '__main__':
-    if len(sys.argv) < 3:
-        print('Usage: ./markdown2html.py README.md README.html', file=sys.stderr)
-        exit(1)
+if len(sys.argv) < 3:
+    print("Usage: ./markdown2html.py README.md README.html", file=sys.stderr)
+    sys.exit(1)
 
-    if not os.path.isfile(sys.argv[1]):
-        print('Missing {}'.format(sys.argv[1]), file=sys.stderr)
-        exit(1)
+input_file = sys.argv[1]
+output_file = sys.argv[2]
 
-    with open(sys.argv[1]) as read:
-        with open(sys.argv[2], 'w') as html:
-            unordered_start, ordered_start, paragraph = False, False, False
-            # bold syntax
-            for line in read:
-                line = line.replace('**', '<b>', 1)
-                line = line.replace('**', '</b>', 1)
-                line = line.replace('__', '<em>', 1)
-                line = line.replace('__', '</em>', 1)
+if not os.path.exists(input_file):
+    print(f"Missing {input_file}", file=sys.stderr)
+    sys.exit(1)
 
-                # md5
-                md5 = re.findall(r'\[\[.+?\]\]', line)
-                md5_inside = re.findall(r'\[\[(.+?)\]\]', line)
-                if md5:
-                    line = line.replace(md5[0], hashlib.md5(md5_inside[0].encode()).hexdigest())
+# Read the input file
+with open(input_file, "r") as f:
+    markdown_content = f.readlines()
 
-                # remove the letter C
-                remove_letter_c = re.findall(r'\(\(.+?\)\)', line)
-                remove_c_more = re.findall(r'\(\((.+?)\)\)', line)
-                if remove_letter_c:
-                    remove_c_more = ''.join(c for c in remove_c_more[0] if c not in 'Cc')
-                    line = line.replace(remove_letter_c[0], remove_c_more)
+# Convert Markdown headings to HTML
+html_content = ""
+is_list = False
+is_paragraph = False
+for line in markdown_content:
+    if line.startswith("- "):
+        if not is_list:
+            if is_paragraph:
+                html_content += "</p>\n"
+                is_paragraph = False
+            html_content += "<ul>\n"
+            is_list = True
+        list_item = line.strip("- \n")
+        html_content += f"    <li>{list_item}</li>\n"
+    elif line.strip() == "":
+        if is_list:
+            html_content += "</ul>\n"
+            is_list = False
+        if not is_paragraph:
+            html_content += "<p>\n"
+            is_paragraph = True
+        html_content += "</p>\n"
+        is_paragraph = False
+        html_content += line
+    else:
+        if is_list:
+            html_content += "</ul>\n"
+            is_list = False
+        if not is_paragraph:
+            html_content += "<p>\n"
+            is_paragraph = True
+        if "[[" in line and "]]" in line:
+            start_index = line.index("[[") + 2
+            end_index = line.index("]]")
+            content = line[start_index:end_index]
+            hashed_content = hashlib.md5(content.encode("utf-8")).hexdigest()
+            line = line.replace(f"[[{content}]]", hashed_content)
+        if "((" in line and "))" in line:
+            start_index = line.index("((") + 2
+            end_index = line.index("))")
+            content = line[start_index:end_index]
+            modified_content = content.replace("c", "").replace("C", "")
+            line = line.replace(f"(({content}))", modified_content)
+        html_content += f"    {line.strip()}"
+        if line.strip() != "":
+            html_content += "<br />\n"
 
-                length = len(line)
-                headings = line.lstrip('#')
-                heading_num = length - len(headings)
-                unordered = line.lstrip('-')
-                unordered_num = length - len(unordered)
-                ordered = line.lstrip('*')
-                ordered_num = length - len(ordered)
+# Check if the list or paragraph is still open at the end of the file
+if is_list:
+    html_content += "</ul>\n"
+if is_paragraph:
+    html_content += "</p>\n"
 
-                # headings, lists
-                if 1 <= heading_num <= 6:
-                    line = '<h{}>'.format(heading_num) + headings.strip() + '</h{}>\n'.format(heading_num)
+# Write the HTML content to the output file
+with open(output_file, "w") as f:
+    f.write(html_content)
 
-                if unordered_num:
-                    if not unordered_start:
-                        html.write('<ul>\n')
-                        unordered_start = True
-                    line = '<li>' + unordered.strip() + '</li>\n'
-
-                if ordered_num:
-                    if not ordered_start:
-                        html.write('<ol>\n')
-                        ordered_start = True
-                    line = '<li>' + ordered.strip() + '</li>\n'
-
-                if not (heading_num or unordered_num or ordered_num):
-                    if not paragraph and length > 1:
-                        html.write('<p>\n')
-                        paragraph = True
-                    elif length == 1:
-                        html.write('</p>\n')
-                        paragraph = False
-                    else:
-                        html.write('<br/>\n')
-
-                if length > 1:
-                    html.write(line)
-
-            if unordered_start:
-                html.write('</ul>\n')
-            if ordered_start:
-                html.write('</ol>\n')
-            if paragraph:
-                html.write('</p>\n')
-
-    exit(0)
+sys.exit(0)
